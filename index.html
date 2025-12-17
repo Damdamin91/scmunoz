@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="initial-scale=1,user-scalable=no,maximum-scale=1,width=device-width">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+
+<!-- STYLES -->
+<link rel="stylesheet" href="./resources/ol.css">
+<link rel="stylesheet" href="./resources/fontawesome-all.min.css">
+<link rel="stylesheet" href="./resources/ol-layerswitcher.css">
+
+<style>
+html, body, #map { width: 100%; height: 100%; margin: 0; }
+.ol-control { background-color: rgba(255,255,255,.4)!important; padding: 2px!important; }
+
+.print-panel {
+    position: absolute; top: 10px; left: 10px; background: #fff; padding: 10px;
+    border-radius: 6px; box-shadow: 0 2px 6px rgba(0,0,0,.25); z-index: 1000;
+}
+.print-panel input { width: 180px; margin-bottom: 6px; padding: 4px; }
+.print-panel button { width: 100%; padding: 6px; cursor: pointer; }
+
+/* Draggable Elements */
+.draggable {
+    position: absolute; padding: 6px 10px; background: rgba(255,255,255,0.8);
+    border: 1px solid #444; border-radius: 4px; cursor: move; font-family: Arial; font-size: 16px;
+    user-select: none; z-index: 1000;
+}
+</style>
+</head>
+<body>
+
+<div class="print-panel">
+    <input type="text" id="elementText" placeholder="New text element">
+    <button onclick="addDraggable()">Add Text</button>
+    <button onclick="exportMap()">🖨 Export Map</button>
+</div>
+
+<div id="map"></div>
+
+<!-- LIBRARIES -->
+<script src="./resources/ol.js"></script>
+<script src="./resources/ol-layerswitcher.js"></script>
+
+<!-- ORTHOPHOTO -->
+<script>
+var orthophotoLayer = new ol.layer.Tile({
+    title: 'Orthophoto',
+    visible: false,
+    zIndex: 0,
+    source: new ol.source.XYZ({
+        url: 'https://api.maptiler.com/tiles/019b10a7-3e45-7f58-9617-a4e293428f9b/{z}/{x}/{y}.png?key=03fbNY9aUyVsA2bD0yur',
+        crossOrigin: 'anonymous',
+        maxZoom: 22
+    })
+});
+</script>
+
+<!-- BOUNDARY -->
+<script src="./layers/Boundary_1.js"></script>
+<script src="./styles/Boundary_1_style.js"></script>
+
+<!-- QGIS2WEB -->
+<script src="./layers/layers.js"></script>
+<script src="./resources/qgis2web.js"></script>
+
+<script>
+/* MAP INIT */
+map.addLayer(orthophotoLayer);
+/* Ensure boundary is above orthophoto */
+map.getLayers().forEach(layer=>{
+    if(layer.get('title') === 'Boundary') layer.setZIndex(10);
+});
+
+/* DRAGGABLE ELEMENTS */
+function addDraggable(){
+    const text = document.getElementById('elementText').value.trim();
+    if(!text) return;
+    const div = document.createElement('div');
+    div.className = 'draggable';
+    div.textContent = text;
+    div.style.top = '50px';
+    div.style.left = '50px';
+    document.body.appendChild(div);
+
+    // Dragging
+    let offsetX, offsetY, isDragging=false;
+    div.addEventListener('mousedown', e=>{
+        isDragging = true;
+        offsetX = e.clientX - div.offsetLeft;
+        offsetY = e.clientY - div.offsetTop;
+    });
+    document.addEventListener('mousemove', e=>{
+        if(isDragging){
+            div.style.left = (e.clientX - offsetX) + 'px';
+            div.style.top = (e.clientY - offsetY) + 'px';
+        }
+    });
+    document.addEventListener('mouseup', e=>{ isDragging=false; });
+}
+
+/* EXPORT MAP WITH DRAGGABLE ELEMENTS */
+function exportMap(){
+    const mapSize = map.getSize();
+    const canvas = document.createElement('canvas');
+    canvas.width = mapSize[0];
+    canvas.height = mapSize[1];
+    const ctx = canvas.getContext('2d');
+
+    map.once('rendercomplete', function(){
+        document.querySelectorAll('.ol-layer canvas').forEach(layerCanvas=>{
+            if(layerCanvas.width>0){
+                ctx.globalAlpha = 1;
+                const transform = layerCanvas.style.transform;
+                if(transform && transform.startsWith('matrix')){
+                    const matrix = transform.replace('matrix(','').replace(')','').split(',').map(Number);
+                    ctx.setTransform(...matrix);
+                } else {
+                    ctx.setTransform(1,0,0,1,0,0);
+                }
+                ctx.drawImage(layerCanvas,0,0);
+            }
+        });
+
+        // Draw draggable elements
+        document.querySelectorAll('.draggable').forEach(el=>{
+            const rect = el.getBoundingClientRect();
+            const mapRect = document.getElementById('map').getBoundingClientRect();
+            ctx.font = '16px Arial';
+            ctx.fillStyle = '#000';
+            ctx.fillText(el.textContent, rect.left - mapRect.left, rect.top - mapRect.top + 16);
+        });
+
+        const link = document.createElement('a');
+        link.download = 'map_export.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+    });
+
+    map.renderSync();
+}
+</script>
+</body>
+</html>
